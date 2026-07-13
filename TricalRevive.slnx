@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TricalRevive.GrainInterfaces/TricalRevive.GrainInterfaces.csproj" />
+    <Project Path="src/TricalRevive.Grains/TricalRevive.Grains.csproj" />
+    <Project Path="src/TricalRevive.Silo/TricalRevive.Silo.csproj" />
+  </Folder>
+</Solution>
