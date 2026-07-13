@@ -13,6 +13,7 @@
 |---|---|
 | 런타임 | .NET 10.0 |
 | 액터 프레임워크 | Microsoft Orleans 10.2.1 |
+| API 계층 | ASP.NET Core Minimal API, OpenAPI |
 | 영속 저장소 | PostgreSQL 16 (Orleans ADO.NET Persistence Provider) |
 | 캐시 / 세션 | Redis 7 |
 | 인프라(로컬) | Docker / Docker Compose |
@@ -23,10 +24,16 @@
 ## 아키텍처
 
 ```
-Client (콘솔 테스트 / 추후 확장)
+브라우저 / Postman / (추후) Blazor 어드민 / 게임 클라이언트
         │
-        │  IClusterClient
+        │  HTTP
         ▼
+┌───────────────────────────┐
+│   TricalRevive.Api          │  ← ASP.NET Core Minimal API (Orleans 클라이언트)
+│   - UseOrleansClient        │     Silo와는 별도 프로세스
+└──────────┬─────────────────┘
+           │  Orleans 프로토콜 (TCP, 게이트웨이 포트 30000)
+           ▼
 ┌───────────────────────────┐
 │   TricalRevive.Silo        │  ← Orleans 서버 프로세스 (Host)
 │   - UseLocalhostClustering │
@@ -37,12 +44,14 @@ Client (콘솔 테스트 / 추후 확장)
 ┌───────────────────────────┐
 │   TricalRevive.Grains      │  ← Grain 구현체 (실제 로직)
 │   - PlayerGrain             │
+│   - GachaGrain               │
 └──────────┬─────────────────┘
            │  참조
            ▼
 ┌───────────────────────────┐
-│ TricalRevive.GrainInterfaces│ ← 클라이언트/서버 공유 계약(인터페이스)
+│ TricalRevive.GrainInterfaces│ ← Api/Silo/Grains가 공유하는 계약(인터페이스)
 │   - IPlayerGrain             │
+│   - IGachaGrain               │
 └───────────────────────────┘
            │
            ▼
@@ -51,7 +60,7 @@ Client (콘솔 테스트 / 추후 확장)
      - OrleansMembershipTable (클러스터 멤버십)
 ```
 
-프로젝트를 3개 계층(GrainInterfaces / Grains / Silo)으로 나눈 이유는 Orleans의 표준 구조를 따르기 위함입니다. 인터페이스와 구현을 분리해두면, 추후 별도의 클라이언트 애플리케이션(예: Blazor 어드민, 게임 클라이언트)이 `GrainInterfaces`만 참조해서 서버 내부 구현에 의존하지 않고 통신할 수 있습니다.
+프로젝트를 4개 계층(GrainInterfaces / Grains / Silo / Api)으로 나눈 이유는 Orleans의 표준 구조를 따르면서, 실제 서비스 환경과 유사하게 **서버(Silo)와 클라이언트(Api)를 별도 프로세스로 분리**하기 위함입니다. `Api`는 `GrainInterfaces`만 참조하고 `Grains`(구현체)는 참조하지 않습니다 — 이렇게 하면 Grain의 실제 로직이 변경되어도 API 계층은 인터페이스 계약이 바뀌지 않는 한 영향을 받지 않습니다. `Api`와 `Silo`는 Orleans 게이트웨이 포트(기본 30000)를 통해 TCP로 통신합니다.
 
 ## 구현 완료 기능
 
@@ -61,6 +70,8 @@ Client (콘솔 테스트 / 추후 확장)
   - 서버 재시작 후에도 상태가 유지되는 것을 실제로 검증함
 - [x] `GachaGrain` — 등급별 확률 뽑기, 천장(pity) 시스템, 10연차 배치 저장
   - `GachaGrain`이 `PlayerGrain`을 호출(cross-grain call)해 골드 차감/캐릭터 지급을 처리
+- [x] REST API 계층 (`TricalRevive.Api`) — Silo와 분리된 프로세스로 Orleans 클러스터에 접속
+  - 외부(HTTP)에서 PlayerGrain, GachaGrain 호출 가능
 - [x] Docker Compose로 PostgreSQL / Redis 로컬 환경 구성
 
 ## 앞으로 할 일 (로드맵)
@@ -80,11 +91,19 @@ TricalRevive/
 │   └── docker-compose.yml          # PostgreSQL, Redis 로컬 컨테이너 정의
 ├── src/
 │   ├── TricalRevive.GrainInterfaces/  # Grain 인터페이스 (계약)
-│   │   └── IPlayerGrain.cs
+│   │   ├── IPlayerGrain.cs
+│   │   ├── IGachaGrain.cs
+│   │   ├── CharacterRarity.cs
+│   │   └── GachaModels.cs
 │   ├── TricalRevive.Grains/           # Grain 구현체
 │   │   ├── PlayerGrain.cs
-│   │   └── PlayerState.cs
-│   └── TricalRevive.Silo/             # Orleans 서버 호스트
+│   │   ├── PlayerState.cs
+│   │   ├── GachaGrain.cs
+│   │   ├── GachaState.cs
+│   │   └── CharacterCatalog.cs
+│   ├── TricalRevive.Silo/             # Orleans 서버 호스트
+│   │   └── Program.cs
+│   └── TricalRevive.Api/              # Orleans 클라이언트 (REST API)
 │       └── Program.cs
 ├── TricalRevive.sln
 └── README.md
@@ -114,21 +133,77 @@ docker exec -it tricalrevive-postgres psql -U tricaladmin -d tricalrevive -f /Po
 docker exec -it tricalrevive-postgres psql -U tricaladmin -d tricalrevive -f /PostgreSQL-Persistence.sql
 ```
 
-### 4. 서버 실행
+### 4. 서버 실행 (Silo, Api 각각 별도 프로세스)
+
+Silo(Orleans 서버)를 먼저 실행하고, `Orleans Silo started.` 로그가 뜬 뒤 Api(Orleans 클라이언트)를 실행합니다.
 
 ```bash
+# 터미널 1 — Silo
 dotnet run --project src/TricalRevive.Silo
+
+# 터미널 2 — Api
+dotnet run --project src/TricalRevive.Api
 ```
 
-정상적으로 실행되면 다음과 같은 로그와 함께 테스트용 Grain 호출 결과가 출력됩니다.
+Api가 정상적으로 Silo에 연결되면, Silo 쪽 콘솔에 아래와 같은 게이트웨이 연결 로그가 찍힙니다.
 
 ```
-초기 골드: 0
-1000골드 지급 후: 1000
-보유 캐릭터: 셀렌, 스텔라
+Orleans.Runtime.Messaging.Gateway[101301]
+      Recorded opened connection from endpoint 127.0.0.1:13716, client ID sys.client/...
 ```
 
-서버를 껐다가 다시 실행하면 `초기 골드`가 이전에 저장된 값으로 유지되는 것을 확인할 수 있습니다 — 이것이 PostgreSQL 영속화가 정상 동작하고 있다는 증거입니다.
+Api는 기본적으로 `http://localhost:5000`에서 요청을 받습니다.
+
+## API 엔드포인트
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/players/{playerId}/gold` | 보유 골드 조회 |
+| POST | `/players/{playerId}/gold?amount={n}` | 골드 지급/차감 |
+| GET | `/players/{playerId}/characters` | 보유 캐릭터 목록 조회 |
+| POST | `/gacha/{playerId}/single` | 단발 뽑기 |
+| POST | `/gacha/{playerId}/ten` | 10연차 뽑기 |
+| GET | `/gacha/{playerId}/pity` | 현재 천장(pity) 카운트 조회 |
+
+### 호출 예시 (PowerShell)
+
+```powershell
+# 골드 조회
+Invoke-RestMethod http://localhost:5000/players/player-001/gold
+
+# 골드 지급
+Invoke-RestMethod -Method Post "http://localhost:5000/players/player-001/gold?amount=5000"
+
+# 단발 뽑기
+Invoke-RestMethod -Method Post http://localhost:5000/gacha/player-001/single
+
+# 10연차
+Invoke-RestMethod -Method Post http://localhost:5000/gacha/player-001/ten
+```
+
+### 실제 호출 결과 (검증)
+
+```
+PS> Invoke-RestMethod http://localhost:5000/players/player-001/gold
+
+playerId    gold
+--------    ----
+player-001 30500
+
+PS> Invoke-RestMethod -Method Post "http://localhost:5000/players/player-001/gold?amount=5000"
+
+playerId    gold
+--------    ----
+player-001 35500
+
+PS> Invoke-RestMethod -Method Post http://localhost:5000/gacha/player-001/single
+
+characters                                          goldSpent remainingGold
+----------                                          --------- -------------
+{@{name=나탈리; rarity=0; isPityTriggered=False}}          150         35350
+```
+
+`Api` → `Silo`(TCP) → `PostgreSQL`로 이어지는 전체 요청 흐름이 실제로 동작하는 것을 확인했습니다.
 
 ## 뽑기 시스템 동작 검증
 
@@ -154,11 +229,7 @@ dotnet run --project src/TricalRevive.Silo
 소모 골드: 1350, 남은 골드: 30500
 
 현재 천장 카운트: 0/60
-
-
 ```
-[결과](./image.png)
-
 
 한 번의 10연차 안에서 천장이 두 번 발동했고(테스트를 위해 `PityThreshold`를 임시로 낮춰서 검증), 발동 직후 카운터가 매번 `0`으로 리셋되는 것을 확인했습니다. 최종 카운트가 `0/60`으로 남은 것은 마지막 뽑기(`아리아`)가 천장으로 SSR을 뽑으면서 카운터가 리셋되었기 때문입니다.
 
