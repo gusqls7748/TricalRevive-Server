@@ -1,5 +1,7 @@
 # TricalRevive Server
 
+[![.NET Build](https://github.com/gusqls7748/TricalRevive/actions/workflows/dotnet-build.yml/badge.svg)](https://github.com/gusqls7748/TricalRevive/actions/workflows/dotnet-build.yml)
+
 > 트릭컬 리바이브(Tricaltale) 채용 공고의 기술 스택을 기반으로, 수집형 서브컬처 RPG의 서버 아키텍처를 학습 및 실습하기 위해 만든 개인 포트폴리오 프로젝트입니다.
 > Microsoft Orleans의 Virtual Actor 모델을 활용해 플레이어 단위 상태를 관리하고, PostgreSQL로 영속화하는 서버를 처음부터 직접 구축했습니다.
 
@@ -18,9 +20,10 @@
 | 영속 저장소 | PostgreSQL 16 (Orleans ADO.NET Persistence Provider) |
 | 캐시 / 리더보드 | Redis 7 (StackExchange.Redis, Sorted Set) |
 | 인프라(로컬) | Docker / Docker Compose |
+| CI/CD | GitHub Actions |
 | 버전 관리 | Git, GitHub |
 
-> 인프라 자동화(Pulumi, Kubernetes, Helm, GitHub Actions)와 관측성(ELK, Elastic APM)은 로드맵에 포함되어 있으며, 순차적으로 추가할 예정입니다.
+> 인프라 자동화(Pulumi, Kubernetes, Helm)와 관측성(ELK, Elastic APM)은 로드맵에 포함되어 있으며, 순차적으로 추가할 예정입니다.
 
 ## 아키텍처
 
@@ -107,12 +110,13 @@ TricalRevive.RealtimeProtocol
 - [x] Redis 연동 — 골드/SSR 리더보드, 세션 캐시
   - Redis Sorted Set으로 실시간 순위 조회 (`GET /leaderboard/gold`, `/leaderboard/ssr`)
   - 플레이어 활동 시 TTL 5분짜리 세션 키 기록
+- [x] GitHub Actions CI 파이프라인
+  - push/PR 시 `ubuntu-latest` 환경에서 전체 솔루션(8개 프로젝트) 자동 빌드 검증
 - [x] Docker Compose로 PostgreSQL / Redis 로컬 환경 구성
 
 ## 앞으로 할 일 (로드맵)
 
 - [ ] Pulumi + AKS + Helm — 인프라 코드화 및 클러스터 배포
-- [ ] GitHub Actions — 빌드/테스트/배포 CI/CD 파이프라인
 - [ ] ELK Stack + Elastic APM — 로그 수집 및 분산 트레이싱
 
 ## 프로젝트 구조
@@ -348,6 +352,18 @@ player-001        1
 
 TCP는 스트림 기반이라 메시지 경계가 보장되지 않기 때문에, `[4바이트 길이] + [본문]` 형태의 길이 프리픽스 프레이밍을 직접 구현해 메시지 하나하나를 정확히 구분했습니다. 서버는 클라이언트 연결마다 별도의 `Task`를 할당해 다수의 연결을 블로킹 없이 동시에 처리합니다.
 
+## GitHub Actions CI 동작 검증
+
+`main` 브랜치로 push하면 `.github/workflows/dotnet-build.yml`이 자동으로 실행되어, `ubuntu-latest` 환경에서 `.NET 10 SDK`로 전체 솔루션(8개 프로젝트)을 복원·빌드합니다.
+
+```
+✓ GitHub Actions CI 파이프라인 추가
+  .NET Build #1: Commit b494caa pushed by <작성자>
+  26s
+```
+
+26초 만에 8개 프로젝트가 Linux 환경에서도 정상적으로 빌드되는 것을 확인했습니다. 이는 향후 컨테이너(Linux 기반) 배포 시 빌드 호환성 문제가 없다는 것을 미리 검증하는 의미도 있습니다.
+
 ## 트러블슈팅 노트
 
 프로젝트를 진행하며 겪었던 문제와 해결 과정을 기록합니다. (신입 개발자로서 문제 해결 과정 자체가 역량을 보여주는 지점이라고 생각해 남겨둡니다.)
@@ -367,5 +383,10 @@ TCP는 스트림 기반이라 메시지 경계가 보장되지 않기 때문에,
 
 트릭컬 리바이브 서버 프로그래머 채용에 지원하며, 실제 업무에서 다루게 될 기술 스택을 미리 학습하고자 이 프로젝트를 진행했습니다.
 
+
 - 실시간 채팅
 ![alt text](image-1.png)
+
+- github 파이프라인 추가
+
+![alt text](image-2.png)
