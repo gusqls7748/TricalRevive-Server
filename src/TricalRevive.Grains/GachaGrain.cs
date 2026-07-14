@@ -11,10 +11,13 @@ public class GachaGrain : Grain, IGachaGrain {
     private static readonly Random Rng = new();
 
     private readonly IPersistentState<GachaState> _state;
+    private readonly LeaderboardService _leaderboard;
 
     public GachaGrain(
-        [PersistentState("gacha-state", "PlayerStore")] IPersistentState<GachaState> state) {
+        [PersistentState("gacha-state", "PlayerStore")] IPersistentState<GachaState> state,
+        StackExchange.Redis.IConnectionMultiplexer redis) {
         _state = state;
+        _leaderboard = new LeaderboardService(redis);
     }
 
     public async Task<GachaResult> PullSingleAsync() {
@@ -26,7 +29,7 @@ public class GachaGrain : Grain, IGachaGrain {
 
         await playerGrain.AddGoldAsync(-SinglePullCost);
 
-        var pulled = RollOne();
+        var pulled = await RollOneAsync();
         await playerGrain.AddCharacterAsync(pulled.Name);
         await _state.WriteStateAsync();
 
@@ -50,7 +53,7 @@ public class GachaGrain : Grain, IGachaGrain {
 
         var results = new List<PulledCharacter>();
         for (var i = 0; i < 10; i++) {
-            var pulled = RollOne();
+            var pulled = await RollOneAsync();
             results.Add(pulled);
             await playerGrain.AddCharacterAsync(pulled.Name);
         }
@@ -73,15 +76,17 @@ public class GachaGrain : Grain, IGachaGrain {
         return Task.FromResult(_state.State.PityCounter);
     }
 
-    private PulledCharacter RollOne() {
+    private async Task<PulledCharacter> RollOneAsync() {
         _state.State.TotalPulls++;
         _state.State.PityCounter++;
 
         var isPityTriggered = _state.State.PityCounter >= PityThreshold;
         var rarity = isPityTriggered ? CharacterRarity.SSR : RollRarity();
 
-        if (rarity == CharacterRarity.SSR)
-            _state.State.PityCounter = 0; // 천장 리셋
+        if (rarity == CharacterRarity.SSR) {
+            _state.State.PityCounter = 0;
+            await _leaderboard.IncrementSsrCountAsync(this.GetPrimaryKeyString());
+        }
 
         var candidates = CharacterCatalog.GetByRarity(rarity);
         var chosen = candidates[Rng.Next(candidates.Length)];

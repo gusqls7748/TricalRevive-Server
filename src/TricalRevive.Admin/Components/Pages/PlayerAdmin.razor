@@ -1,0 +1,136 @@
+﻿@page "/admin"
+@rendermode InteractiveServer
+@using TricalRevive.Admin.Services
+@inject GameApiClient Api
+
+<PageTitle>TricalRevive GM 어드민</PageTitle>
+
+<h1>🎮 GM 어드민 도구</h1>
+
+<div class="card p-3 mb-4">
+    <label>플레이어 ID</label>
+    <div class="input-group">
+        <input @bind="playerId" class="form-control" placeholder="예: player-001" />
+        <button class="btn btn-primary" @onclick="LoadPlayer">조회</button>
+    </div>
+</div>
+
+@if (isLoading) {
+    <p><em>불러오는 중...</em></p>
+}
+
+@if (errorMessage is not null) {
+    <div class="alert alert-danger">@errorMessage</div>
+}
+
+@if (gold is not null) {
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card p-3 mb-3">
+                <h4>💰 재화 관리</h4>
+                <p>현재 골드: <strong>@gold.Gold</strong></p>
+                <div class="input-group mb-2">
+                    <input @bind="goldAmount" type="number" class="form-control" placeholder="지급할 골드" />
+                    <button class="btn btn-success" @onclick="GiveGold">지급</button>
+                </div>
+            </div>
+
+            <div class="card p-3 mb-3">
+                <h4>📦 보유 캐릭터</h4>
+                @if (characters is not null && characters.Characters.Count > 0) {
+                    <ul>
+                        @foreach (var group in characters.Characters.GroupBy(c => c)) {
+                            <li>@group.Key <span class="text-muted">x@(group.Count())</span></li>
+                        }
+                    </ul>
+                } else {
+                    <p class="text-muted">보유 캐릭터 없음</p>
+                }
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card p-3 mb-3">
+                <h4>🎰 뽑기 테스트</h4>
+                <button class="btn btn-outline-primary me-2" @onclick="PullSingle">단발 뽑기</button>
+                <button class="btn btn-outline-primary" @onclick="PullTen">10연차</button>
+
+                @if (lastGachaResult is not null) {
+                    <hr />
+                    <p>소모 골드: @lastGachaResult.GoldSpent / 남은 골드: @lastGachaResult.RemainingGold</p>
+                    <ul class="list-group">
+                        @foreach (var c in lastGachaResult.Characters) {
+                            <li class="list-group-item @RarityCss(c.Rarity)">
+                                @c.Name — @RarityLabel(c.Rarity)
+                                @if (c.IsPityTriggered) {
+                                    <span class="badge bg-warning text-dark">천장 발동</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string playerId = "player-001";
+    private int goldAmount = 1000;
+    private bool isLoading;
+    private string? errorMessage;
+
+    private PlayerGoldResponse? gold;
+    private PlayerCharactersResponse? characters;
+    private GachaResultDto? lastGachaResult;
+
+    private async Task LoadPlayer() {
+        errorMessage = null;
+        isLoading = true;
+        try {
+            gold = await Api.GetGoldAsync(playerId);
+            characters = await Api.GetCharactersAsync(playerId);
+            lastGachaResult = null;
+        } catch (Exception ex) {
+            errorMessage = $"조회 실패: {ex.Message}";
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    private async Task GiveGold() {
+        gold = await Api.AddGoldAsync(playerId, goldAmount);
+    }
+
+    private async Task PullSingle() {
+        try {
+            lastGachaResult = await Api.PullSingleAsync(playerId);
+            gold = await Api.GetGoldAsync(playerId);
+            characters = await Api.GetCharactersAsync(playerId);
+        } catch (Exception ex) {
+            errorMessage = $"뽑기 실패: {ex.Message}";
+        }
+    }
+
+    private async Task PullTen() {
+        try {
+            lastGachaResult = await Api.PullTenAsync(playerId);
+            gold = await Api.GetGoldAsync(playerId);
+            characters = await Api.GetCharactersAsync(playerId);
+        } catch (Exception ex) {
+            errorMessage = $"뽑기 실패: {ex.Message}";
+        }
+    }
+
+    private static string RarityLabel(int rarity) => rarity switch {
+        2 => "SSR",
+        1 => "SR",
+        _ => "R"
+    };
+
+    private static string RarityCss(int rarity) => rarity switch {
+        2 => "list-group-item-warning",
+        1 => "list-group-item-info",
+        _ => ""
+    };
+}

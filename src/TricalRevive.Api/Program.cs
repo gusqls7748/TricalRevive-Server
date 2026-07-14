@@ -2,8 +2,12 @@ using Orleans;
 using Orleans.Configuration;
 using Orleans.Hosting;
 using TricalRevive.GrainInterfaces;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect("localhost:6379"));
 
 // 이 API 프로세스는 Orleans "클라이언트"로 동작합니다.
 // Silo(서버)와는 별도의 프로세스이며, TCP로 게이트웨이 포트(기본 30000)를 통해 연결합니다.
@@ -63,6 +67,24 @@ app.MapGet("/gacha/{playerId}/pity", async (string playerId, IClusterClient clie
     var gacha = client.GetGrain<IGachaGrain>(playerId);
     var pity = await gacha.GetPityCountAsync();
     return Results.Ok(new { playerId, pityCount = pity });
+});
+
+app.MapGet("/leaderboard/gold", async (IConnectionMultiplexer redis) => {
+    var db = redis.GetDatabase();
+    var entries = await db.SortedSetRangeByScoreWithScoresAsync(
+        "leaderboard:gold", order: Order.Descending, take: 10);
+
+    var result = entries.Select(e => new { playerId = e.Element.ToString(), gold = (int)e.Score });
+    return Results.Ok(result);
+});
+
+app.MapGet("/leaderboard/ssr", async (IConnectionMultiplexer redis) => {
+    var db = redis.GetDatabase();
+    var entries = await db.SortedSetRangeByScoreWithScoresAsync(
+        "leaderboard:ssr", order: Order.Descending, take: 10);
+
+    var result = entries.Select(e => new { playerId = e.Element.ToString(), ssrCount = (int)e.Score });
+    return Results.Ok(result);
 });
 
 app.Run();

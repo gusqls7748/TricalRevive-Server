@@ -1,7 +1,12 @@
-﻿using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Orleans.Hosting;
+using StackExchange.Redis;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect("localhost:6379"));
 
 const string connectionString =
     "Host=localhost;Port=5432;Database=tricalrevive;Username=tricaladmin;Password=tricalpass123";

@@ -1,8 +1,12 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/TricalRevive.Admin/TricalRevive.Admin.csproj" />
     <Project Path="src/TricalRevive.Api/TricalRevive.Api.csproj" />
     <Project Path="src/TricalRevive.GrainInterfaces/TricalRevive.GrainInterfaces.csproj" />
     <Project Path="src/TricalRevive.Grains/TricalRevive.Grains.csproj" />
+    <Project Path="src/TricalRevive.RealtimeClient/TricalRevive.RealtimeClient.csproj" />
+    <Project Path="src/TricalRevive.RealtimeProtocol/TricalRevive.RealtimeProtocol.csproj" />
+    <Project Path="src/TricalRevive.RealtimeServer/TricalRevive.RealtimeServer.csproj" />
     <Project Path="src/TricalRevive.Silo/TricalRevive.Silo.csproj" />
   </Folder>
 </Solution>
