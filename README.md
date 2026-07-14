@@ -19,11 +19,12 @@
 | 실시간 통신 | TCP Socket (자체 길이 프리픽스 프레이밍 프로토콜) |
 | 영속 저장소 | PostgreSQL 16 (Orleans ADO.NET Persistence Provider) |
 | 캐시 / 리더보드 | Redis 7 (StackExchange.Redis, Sorted Set) |
+| 관측성(인프라만 구성) | Elasticsearch 8.15, Kibana 8.15 |
 | 인프라(로컬) | Docker / Docker Compose |
 | CI/CD | GitHub Actions |
 | 버전 관리 | Git, GitHub |
 
-> 인프라 자동화(Pulumi, Kubernetes, Helm)와 관측성(ELK, Elastic APM)은 로드맵에 포함되어 있으며, 순차적으로 추가할 예정입니다.
+> 관측성(ELK)은 컨테이너 인프라까지만 구성된 상태이며, 애플리케이션(Serilog 로그 전송, Elastic APM 트레이싱) 연동은 진행 중입니다. 인프라 자동화(Pulumi, Kubernetes, Helm)는 로드맵에 포함되어 있습니다.
 
 ## 아키텍처
 
