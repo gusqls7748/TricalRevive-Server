@@ -1,0 +1,30 @@
+name: .NET Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: .NET 10 SDK 설치
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: NuGet 패키지 복원
+        run: dotnet restore
+
+      - name: 솔루션 빌드
+        run: dotnet build --no-restore --configuration Release
+
+      - name: 빌드 결과 요약
+        if: always()
+        run: echo "빌드 완료 - 8개 프로젝트(GrainInterfaces, Grains, Silo, Api, Admin, RealtimeProtocol, RealtimeServer, RealtimeClient)"
