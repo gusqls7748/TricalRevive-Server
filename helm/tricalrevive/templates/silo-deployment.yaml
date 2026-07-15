@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tricalrevive-silo
+spec:
+  replicas: {{ .Values.silo.replicas }}
+  selector:
+    matchLabels:
+      app: tricalrevive-silo
+  template:
+    metadata:
+      labels:
+        app: tricalrevive-silo
+    spec:
+      containers:
+        - name: silo
+          image: {{ .Values.silo.image }}
+          imagePullPolicy: Never
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP

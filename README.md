@@ -1,6 +1,6 @@
 # TricalRevive Server
 
-[![.NET Build](https://github.com/gusqls7748/TricalRevive/actions/workflows/dotnet-build.yml/badge.svg)](https://github.com/gusqls7748/TricalRevive/actions/workflows/dotnet-build.yml)
+[![.NET Build](https://github.com/YOUR_GITHUB_USERNAME/TricalRevive/actions/workflows/dotnet-build.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/TricalRevive/actions/workflows/dotnet-build.yml)
 
 > 트릭컬 리바이브(Tricaltale) 채용 공고의 기술 스택을 기반으로, 수집형 서브컬처 RPG의 서버 아키텍처를 학습 및 실습하기 위해 만든 개인 포트폴리오 프로젝트입니다.
 > Microsoft Orleans의 Virtual Actor 모델을 활용해 플레이어 단위 상태를 관리하고, PostgreSQL로 영속화하는 서버를 처음부터 직접 구축했습니다.
@@ -19,12 +19,12 @@
 | 실시간 통신 | TCP Socket (자체 길이 프리픽스 프레이밍 프로토콜) |
 | 영속 저장소 | PostgreSQL 16 (Orleans ADO.NET Persistence Provider) |
 | 캐시 / 리더보드 | Redis 7 (StackExchange.Redis, Sorted Set) |
-| 관측성(인프라만 구성) | Elasticsearch 8.15, Kibana 8.15 |
+| 관측성 | Elasticsearch 8.15, Kibana 8.15, APM Server 8.15, Serilog, Elastic APM .NET Agent |
 | 인프라(로컬) | Docker / Docker Compose |
 | CI/CD | GitHub Actions |
 | 버전 관리 | Git, GitHub |
 
-> 관측성(ELK)은 컨테이너 인프라까지만 구성된 상태이며, 애플리케이션(Serilog 로그 전송, Elastic APM 트레이싱) 연동은 진행 중입니다. 인프라 자동화(Pulumi, Kubernetes, Helm)는 로드맵에 포함되어 있습니다.
+> 인프라 자동화(Pulumi, Kubernetes, Helm)는 로드맵에 포함되어 있으며, 순차적으로 추가할 예정입니다.
 
 ## 아키텍처
 
@@ -113,12 +113,15 @@ TricalRevive.RealtimeProtocol
   - 플레이어 활동 시 TTL 5분짜리 세션 키 기록
 - [x] GitHub Actions CI 파이프라인
   - push/PR 시 `ubuntu-latest` 환경에서 전체 솔루션(8개 프로젝트) 자동 빌드 검증
-- [x] Docker Compose로 PostgreSQL / Redis 로컬 환경 구성
+- [x] ELK Stack + Elastic APM 관측성
+  - Serilog로 Silo/Api의 구조화된 로그를 Elasticsearch에 직접 전송, Kibana Discover에서 검색
+  - Elastic APM .NET Agent로 Silo/Api를 자동 계측 — HTTP 요청, Orleans 그레인 활성화(`activate grain`), 상태 저장(`write storage`) 등을 트랜잭션/스팬 단위로 트레이싱
+  - Kibana APM Services 화면에서 두 서비스의 지연시간(Latency), 처리량(Throughput), 실패율을 실시간 확인
+- [x] Docker Compose로 PostgreSQL / Redis / Elasticsearch / Kibana / APM Server 로컬 환경 구성
 
 ## 앞으로 할 일 (로드맵)
 
 - [ ] Pulumi + AKS + Helm — 인프라 코드화 및 클러스터 배포
-- [ ] ELK Stack + Elastic APM — 로그 수집 및 분산 트레이싱
 
 ## 프로젝트 구조
 
@@ -175,6 +178,18 @@ TricalRevive/
 cd docker
 docker compose up -d
 ```
+
+PostgreSQL, Redis 외에 Elasticsearch, Kibana, APM Server도 함께 뜹니다. Elasticsearch/APM Server는 완전히 준비되는 데 30초~1분 정도 걸릴 수 있습니다.
+
+```bash
+# Elasticsearch 정상 확인
+curl http://localhost:9200
+
+# APM Server 정상 확인
+curl http://localhost:8200
+```
+
+> Elastic APM은 Elasticsearch에 직접 데이터를 쓰지 않고 **APM Server**를 거칩니다. `docker-compose.yml`에 Elasticsearch/Kibana만 구성하고 APM Server를 빠뜨리면 트레이싱 데이터가 전송되지 않으니 주의가 필요합니다.
 
 ### 3. PostgreSQL 스키마 초기화 (최초 1회)
 
@@ -365,6 +380,35 @@ TCP는 스트림 기반이라 메시지 경계가 보장되지 않기 때문에,
 
 26초 만에 8개 프로젝트가 Linux 환경에서도 정상적으로 빌드되는 것을 확인했습니다. 이는 향후 컨테이너(Linux 기반) 배포 시 빌드 호환성 문제가 없다는 것을 미리 검증하는 의미도 있습니다.
 
+## ELK Stack + Elastic APM 동작 검증
+
+Silo, Api 양쪽에 Serilog(로그)와 Elastic APM .NET Agent(트레이싱)를 연결하고, Kibana에서 실제로 데이터가 수집되는지 확인했습니다.
+
+**로그 (Kibana Discover)**
+
+Serilog가 콘솔과 Elasticsearch(`tricalrevive-silo-logs-*`, `tricalrevive-api-logs-*` 인덱스) 양쪽에 동시에 로그를 기록하도록 구성했습니다. `tricalrevive-*` 데이터 뷰로 Discover에서 두 서비스의 로그를 시간순으로 검색할 수 있습니다.
+
+![Kibana Discover 로그 화면](docs/images/kibana-discover.png)
+
+**APM 서비스 목록**
+
+두 서비스 모두 정상적으로 APM에 등록되어 지연시간(Latency)과 처리량(Throughput)이 실시간 집계되는 것을 확인했습니다.
+
+![Kibana APM Services 화면](docs/images/kibana-apm-services.png)
+
+```
+TricalRevive_Silo   Production    60ms    5.3 tpm
+TricalRevive_Api    Development   132ms   0.1 tpm
+```
+
+**트레이스 상세 (Top traces)**
+
+HTTP 요청 하나(`GET /players/player-001/gold`)가 트랜잭션으로 잡히고, 그 내부에서 발생하는 Orleans 그레인 활성화(`activate grain`), PostgreSQL 상태 쓰기(`write storage`), Elasticsearch 호출(`CallElasticsearch`) 등이 개별 스팬으로 분해되어 기록되는 것을 확인했습니다.
+
+![Kibana APM Traces 화면](docs/images/kibana-apm-traces.png)
+
+이를 통해 특정 요청이 느려졌을 때 "그레인 활성화가 느린 건지, DB 쓰기가 느린 건지, 외부 호출이 느린 건지"를 트레이스 단위로 바로 진단할 수 있는 구조를 갖췄습니다.
+
 ## 트러블슈팅 노트
 
 프로젝트를 진행하며 겪었던 문제와 해결 과정을 기록합니다. (신입 개발자로서 문제 해결 과정 자체가 역량을 보여주는 지점이라고 생각해 남겨둡니다.)
@@ -379,11 +423,12 @@ TCP는 스트림 기반이라 메시지 경계가 보장되지 않기 때문에,
   → `IConnectionMultiplexer`를 사용하는 코드가 있는 모든 프로젝트(Grains뿐 아니라 Silo, Api)에 개별적으로 NuGet 패키지를 설치해야 함을 확인.
 - **Windows에서 빌드 시 "파일이 프로세스에 의해 잠겨 있습니다" 오류**
   → 이전에 `dotnet run`으로 띄워둔 프로세스가 종료되지 않은 상태에서 재빌드하면 실행 파일(.exe)을 덮어쓰지 못함. 재빌드 전 실행 중인 프로세스를 반드시 종료해야 함.
+- **Elastic APM 에이전트를 붙였는데 Kibana APM 화면에 서비스가 안 보임**
+  → Elastic APM은 Elasticsearch에 직접 데이터를 전송하지 않고 반드시 **APM Server**를 거쳐야 함. 처음에 `docker-compose.yml`에 Elasticsearch/Kibana만 구성하고 APM Server를 빠뜨려서 트레이스가 전혀 수집되지 않았고, `apm-server` 서비스를 추가한 뒤 정상 동작함. 또한 APM은 트랜잭션이 최소 1건 이상 발생한 서비스만 목록에 표시하므로, 프로세스를 띄운 직후에는 실제 요청을 한 번 이상 보내야 확인 가능함.
 
 ## 작성자
 
 트릭컬 리바이브 서버 프로그래머 채용에 지원하며, 실제 업무에서 다루게 될 기술 스택을 미리 학습하고자 이 프로젝트를 진행했습니다.
-
 
 - 실시간 채팅
 ![alt text](image-1.png)
@@ -391,3 +436,8 @@ TCP는 스트림 기반이라 메시지 경계가 보장되지 않기 때문에,
 - github 파이프라인 추가
 
 ![alt text](image-2.png)
+
+
+![alt text](image-3.png)
+
+![alt text](image-4.png)

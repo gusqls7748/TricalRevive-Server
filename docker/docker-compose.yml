@@ -38,6 +38,24 @@ services:
       - "5601:5601"
     depends_on:
       - elasticsearch
+  
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:8.15.0
+    container_name: tricalrevive-apm-server
+    depends_on:
+      - elasticsearch
+      - kibana
+    ports:
+      - "8200:8200"
+    command: >
+      apm-server -e
+      -E apm-server.host=0.0.0.0:8200
+      -E output.elasticsearch.hosts=["elasticsearch:9200"]
+      -E apm-server.kibana.enabled=true
+      -E apm-server.kibana.host=kibana:5601
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8200/"]
+      retries: 10
 
 volumes:
   postgres_data:

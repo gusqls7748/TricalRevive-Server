@@ -1,23 +1,59 @@
+using Elastic.Apm.NetCoreAll;
 using Orleans;
 using Orleans.Configuration;
 using Orleans.Hosting;
-using TricalRevive.GrainInterfaces;
+using Serilog;
+using Serilog.Sinks.Elasticsearch;
 using StackExchange.Redis;
+using TricalRevive.GrainInterfaces;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Override("Elastic.Apm", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+    .Enrich.WithProperty("Application", "TricalRevive.Silo") // Api는 "TricalRevive.Api"
+    .WriteTo.Console()
+    .WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri("http://host.docker.internal:9200")) {
+        AutoRegisterTemplate = true,
+        IndexFormat = "tricalrevive-silo-logs-{0:yyyy.MM.dd}" // Api는 "tricalrevive-api-logs-{0:yyyy.MM.dd}"
+    })
+    .CreateLogger();
+
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<IConnectionMultiplexer>(
-    ConnectionMultiplexer.Connect("localhost:6379"));
+builder.Host.UseSerilog();
 
-// 이 API 프로세스는 Orleans "클라이언트"로 동작합니다.
-// Silo(서버)와는 별도의 프로세스이며, TCP로 게이트웨이 포트(기본 30000)를 통해 연결합니다.
 builder.Host.UseOrleansClient(clientBuilder => {
     clientBuilder.UseLocalhostClustering();
 });
 
 builder.Services.AddOpenApi();
 
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect("host.docker.internal:6379"));
+
+// 이 API 프로세스는 Orleans "클라이언트"로 동작합니다.
+// Silo(서버)와는 별도의 프로세스이며, TCP로 게이트웨이 포트(기본 30000)를 통해 연결합니다.
+builder.Host.UseOrleansClient(clientBuilder => {
+    clientBuilder.UseAdoNetClustering(options =>
+    {
+        options.Invariant = "Npgsql";
+        options.ConnectionString = "Host=host.docker.internal;Port=5432;Database=tricalrevive;Username=tricaladmin;Password=tricalpass123";
+    });
+
+    clientBuilder.Configure<ClusterOptions>(options =>
+    {
+        options.ClusterId = "tricalrevive-cluster";
+        options.ServiceId = "tricalrevive";
+    });
+});
+
 var app = builder.Build();
+
+// Elastic APM 미들웨어 - HTTP 요청 하나하나를 트랜잭션으로 기록하고,
+// 그 안에서 발생하는 Redis 호출 등을 자동으로 스팬(span)으로 잡아줍니다.
+app.UseAllElasticApm(builder.Configuration);
+
 
 app.MapOpenApi();
 

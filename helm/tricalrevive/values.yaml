@@ -1,0 +1,9 @@
+silo:
+  image: tricalrevive-silo:local
+  replicas: 1
+
+api:
+  image: tricalrevive-api:local
+  replicas: 1
+  servicePort: 80
+  containerPort: 8080
